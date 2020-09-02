@@ -1,0 +1,121 @@
+import zipfile
+
+import PIL
+from PIL import Image
+import pytesseract
+import cv2 as cv
+import numpy as np
+import inspect
+
+# loading the face detection classifier
+face_cascade = cv.CascadeClassifier('readonly/haarcascade_frontalface_default.xml')
+
+# the rest is up to you!
+
+
+# Type the 'keyword' to be searched here.
+strng = input('Please type what you want to search, here, on the following line.\n')
+
+# Using zipfile module to extract image files from images.zip and storing the Image objects to a list
+# For our sample outputs, for 'Mark' as input we use 'images.zip' and for 'Chris' we use 'small_img.zip'!!
+# Added another 'else' statement so the user can try other searches using 'images.zip'
+if strng == 'Mark' :
+    image_zip_file = zipfile.ZipFile('readonly/images.zip')
+elif strng == 'Chris' or strng == 'Christopher' :
+    image_zip_file = zipfile.ZipFile('readonly/small_img.zip')
+else :
+    image_zip_file = zipfile.ZipFile('readonly/images.zip')
+
+image_files_info = image_zip_file.infolist()
+images_list = []
+file_names_list = []
+for file_info in image_files_info :
+    file_names_list.append(file_info.filename)
+    file_location = image_zip_file.extract(member = file_info)
+    image = Image.open(file_location)
+    images_list.append(image)
+    
+
+# Now, using the pytesseract module for optical character recognition and saving the text for each image to another list
+from pytesseract import image_to_string
+
+images_text_list = []
+for image in images_list:
+    gray_image = image.convert('L')
+    text = image_to_string(gray_image)
+    images_text_list.append(text)
+    
+    
+# Now, using the opencv module for optical face recognition and saving the bounding boxes of those faces to another list
+# Changing the 'scale' and 'minNeighbors' parameters and using the values to get the desired output
+img_list = []
+for file_info in image_files_info:
+    file_location = image_zip_file.extract(member = file_info)
+    img = cv.imread(file_location)
+    img_list.append(img)
+
+bounding_boxes = []    
+for image in img_list :  
+    img = cv.cvtColor(image, cv.COLOR_BGR2GRAY)
+    faces = face_cascade.detectMultiScale(img, 1.3,minNeighbors = 6)
+    if faces == tuple(()) :
+        faces = list(faces)
+    else :
+        faces = faces.tolist()
+    bounding_boxes.append(faces)
+    
+    
+
+# Now, using the bounding boxes from above to crop the faces from images and saving it another list
+# The list cropped_images_list's elements are lists where each list contains cropped faces for one image
+cropped_images_list = []
+for idx in range(len(images_list)):
+    image = images_list[idx]
+    cropped_list = []
+    
+    if len(bounding_boxes[idx]) == 0 :
+        cropped_images_list.append(cropped_list) 
+    else :
+        for x,y,w,h in bounding_boxes[idx]:
+            cropped_image = image.crop((x,y,x+w,y+h))
+            cropped_list.append(cropped_image)
+        cropped_images_list.append(cropped_list) 
+        
+        
+# Now, we paste the cropped faces from the image on a contact sheet and make a list of contact sheets
+# First, resizing the cropped faces to a maximum width and height of 100 pixels each using 'thumbnail' function
+contact_sheets_list = []
+for cropped_image_list in cropped_images_list:
+    if len(cropped_image_list) == 0:
+        contact_sheets_list.append('No faces')
+    else:
+        for cropped_image in cropped_image_list:
+                cropped_image.thumbnail((100,100))
+    
+        if (len(cropped_image_list)) % 5 != 0 :
+            rows = ((len(cropped_image_list)) // 5) + 1
+            contact_sheet = PIL.Image.new(cropped_image_list[0].mode, (100*5, 100*rows))
+        else :
+            rows = ((len(cropped_image_list)) // 5)
+            contact_sheet = PIL.Image.new(cropped_image_list[0].mode, (100*5, 100*rows))
+        x = 0
+        y = 0
+        for cropped_image in cropped_image_list:
+            contact_sheet.paste(cropped_image, (x,y))
+        
+            if x+100 == contact_sheet.width:
+                x=0
+                y=y+100 
+            else:
+                x=x+100
+        contact_sheets_list.append(contact_sheet)
+        
+        
+# Finally, we search for the 'keyword' input given by user in the texts and provide output accordingly!!!!
+for idx in range(len(images_text_list)):
+    if strng in images_text_list[idx]:
+        print('Results found in file {}'.format(file_names_list[idx]))
+        if len(cropped_images_list[idx]) == 0:
+            print('But there were no faces in that file!')
+        else :
+            display(contact_sheets_list[idx])
